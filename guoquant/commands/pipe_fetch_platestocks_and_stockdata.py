@@ -1,0 +1,85 @@
+"""数据获取流水线：板块列表 → 板块成分 → 板块指数 → 过滤股票 → 行情/K线。
+
+依次执行：
+
+1. fetch_platelist：抓取行业/概念板块列表；
+2. fetch_platestocks：逐板块抓取成分股；
+3. rewrite_plateindexes：合并板块为 ``plate_index.csv`` （开头含四个基准指数）；
+4. fetch_stockfiltered：抓取市值分层股票清单（四档 CSV）；
+5. fetch_stockquote：以 ``plate_index.csv`` 为清单先抓日线、再抓周线行情；
+6. fetch_stockdata：以四个市值分组清单各抓取一批行情/资金流/筹码数据。
+
+移植自 guozi-quant pipeline 的同名命令（Django call_command 版），
+改为直接调用 guoquant 各步骤命令函数。
+"""
+import time
+from datetime import date, timedelta
+
+import typer
+
+from guoquant.common.log import console
+from guoquant.common.utils import outp, todate
+from guoquant.commands.fetch_platelist import command as fetch_platelist
+from guoquant.commands.fetch_platestocks import command as fetch_platestocks
+from guoquant.commands.fetch_stockdata import command as fetch_stockdata
+from guoquant.commands.fetch_stockfiltered import command as fetch_stockfiltered
+from guoquant.commands.fetch_stockquote import command as fetch_stockquote
+from guoquant.commands.rewrite_plateindexes import command as rewrite_plateindexes
+from guoquant.common.data_path import filtered_stock_paths
+
+
+def command(
+    date: str = typer.Option(
+        f'{date.today():%y%m%d}',
+        '--date',
+        help=f'date, default={date.today():%y%m%d}'),
+    offset: int = typer.Option(
+        0,
+        '--offset',
+        help='date offset, default=0'),
+) -> None:
+    """执行板块/行情与 K 线数据获取流水线（步骤顺序见模块说明）。
+
+    目标日期先经 ``todate()`` 解析、再回退 offset 天；各步骤命令以该
+    日期下的默认路径模板运行。串联关系：``plate_index.csv`` （四个基准
+    指数 + 全部板块）作为 fetch_stockquote 的清单输入抓 d/w 两段行情，
+    四个市值分组 CSV（``filtered_stock_paths`` 定位）作为
+    fetch_stockdata 的清单输入分四批抓取。
+
+    Args:
+        date (str): 目标日期（YYMMDD），默认今天。
+        offset (int): 相对 date 的回退天数，默认 0。
+    """
+    start = time.time()
+
+    d = todate(date) - timedelta(offset)
+    dstr = f'{d:%y%m%d}'
+    console.print(f'date={dstr}')
+
+    console.print('\n[[ FETCH PLATE LIST ]]')
+    fetch_platelist()
+
+    console.print('\n[[ FETCH PLATE STOCKS ]]')
+    fetch_platestocks()
+
+    console.print('\n[[ REWRITE PLATE INDEXES ]]')
+    rewrite_plateindexes()
+
+    console.print('\n[[ FETCH FILTERED STOCKS ]]')
+    fetch_stockfiltered()
+
+    plates = outp(f'{dstr}/plate_index.csv')
+
+    stocks_mv_1, stocks_mv_2, stocks_mv_3, stocks_mv_4 = filtered_stock_paths(
+        outp(f'{dstr}/fetched_data'))
+
+    console.print('\n[[ FETCH STOCK QUOTE d ]]')
+    fetch_stockquote(file=plates)
+    console.print('\n[[ FETCH STOCK QUOTE w ]]')
+    fetch_stockquote(k='w', file=plates)
+
+    for i, stocks in enumerate([stocks_mv_1, stocks_mv_2, stocks_mv_3, stocks_mv_4], 1):
+        console.print(f'\n[[ FETCH STOCK DATA {i}/4 ]]')
+        fetch_stockdata(file=stocks)
+
+    console.print(f'cost={int(time.time() - start)}s', style='green')

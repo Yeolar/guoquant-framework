@@ -1,0 +1,17 @@
+# 安装：python -m pip install -r requirements.txt
+backtrader>=1.9.78
+pandas>=2.0
+numpy>=1.24
+matplotlib>=3.7
+scipy>=1.10
+rich>=13.0
+python-dotenv>=1.0
+orjson>=3.9
+pyarrow>=14.0
+typer>=0.15,<0.16
+markdown>=3.5
+# 行情抓取（fetch_* 命令）：富途 OpenAPI 客户端。
+# 需要富途账号与本地 FutuOpenD 服务（127.0.0.1:11111）。
+futu-api>=8.0
+# QMT（xtquant）实盘交易依赖：随国金 QMT 客户端分发（非 pip 包），
+# 如已安装 QMT，将客户端安装目录加入 PYTHONPATH 即可，无需在此列出。

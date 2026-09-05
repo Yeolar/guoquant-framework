@@ -1,0 +1,11 @@
+# Python 缓存与运行时产物（工作区 git 留痕时忽略）
+__pycache__/
+*.pyc
+.mplcache/
+
+# 回测/排名输出产物（out/250630 为模板自带示例数据，保留）
+out/*
+!out/250630/
+
+# Sphinx 构建产物（docs 源码保留，产物不入库）
+docs/_build/
