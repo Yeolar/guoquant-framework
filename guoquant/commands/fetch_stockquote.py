@@ -1,8 +1,9 @@
 """
-个股行情抓取命令：从股票清单 CSV 抓取单个周期的 K 线行情并落盘 parquet。
+个股行情抓取命令：从清单 CSV 抓取单个周期的 K 线行情并落盘 parquet。
 
-周期 k = 1/3/5 分钟、d 日线、w 周线；每只股票一个文件，写入
-``<日期>/fetched_data/quote/<周期>/stock/`` （stock/ 与 index/ 平行）。
+周期 k = 1/3/5 分钟、d 日线、w 周线；每个标的（股票或板块/指数）一个
+文件，写入 ``<日期>/fetched_data/quote/<周期>/<category>/``：category
+默认 stock（个股清单），板块/指数清单传 index（stock/ 与 index/ 平行）。
 依赖：``guoquant.common.fetch.fetch_stock_quote`` （实际抓取，parquet 落地）。
 """
 from datetime import date
@@ -20,14 +21,21 @@ def command(
         '{d:%y%m%d}/fetched_data',
         '-o',
         '--outputdir',
-        help='output directory, default={d:%%y%%m%%d}/fetched_data（子目录固定为 quote/<周期>/stock）'),
+        help='output directory, default={d:%%y%%m%%d}/fetched_data'
+             '（子目录为 quote/<周期>/<category>，category 默认 stock）'),
     k: str = typer.Option('d', '-k', help='1,3,5,d,w, default=d'),
+    category: str = typer.Option(
+        'stock',
+        '-c',
+        '--category',
+        help='stock or index, default=stock'),
 ) -> None:
-    """按指定周期抓取清单中所有股票的 K 线行情。
+    """按指定周期抓取清单中所有标的的 K 线行情。
 
-    读取清单 CSV 首列的股票代码列表，在 ``open_quote_context()`` 共享
-    行情上下文内批量抓取（Progress 显示进度）；输出目录固定为
-    ``fetched_data/quote/<周期>/stock/`` （stock/ 与 index/ 平行）。
+    读取清单 CSV 首列的代码列表，在 ``open_quote_context()`` 共享
+    行情上下文内批量抓取（Progress 显示进度）；输出目录为
+    ``fetched_data/quote/<周期>/<category>/``：category 默认 stock
+    （个股清单），板块/指数清单传 index（stock/ 与 index/ 平行）。
 
     provider 分支：实际抓取在 ``fetch_stock_quote`` 内完成，按 .env 的
     ``FETCH_PROVIDER`` 分发——futu 分批订阅（每批 300 只上限）后逐股
@@ -39,17 +47,20 @@ def command(
     错误并继续，订阅/退订失败会中止剩余抓取。
 
     Args:
-        file (str): 股票清单 CSV 文件（首列为股票代码，其余列忽略）。
+        file (str): 清单 CSV 文件（首列为代码，其余列忽略）。
         outputdir (str): 输出根目录模板，默认 ``{d:%y%m%d}/fetched_data``；
-            子目录固定为 quote/<周期>/stock。
+            子目录为 quote/<周期>/<category>。
         k (str): 周期符号 1/3/5/d/w（分钟线/日线/周线），默认 d。
+        category (str): 标的类别 stock/index，决定子目录
+            ``quote/<周期>/<category>/``，默认 stock。
     """
     source = Path(file)
     type = k
-    # 输出目录固定为 fetched_data/quote/<周期>/stock/（stock/ 与 index/ 平行）
+    # 输出目录为 fetched_data/quote/<周期>/<category>/（个股 stock、
+    # 板块/指数 index，两者平行）
     outputdir = outp(
         outputdir.format(d=date.today()),
-        'quote', type, 'stock',
+        'quote', type, category,
         is_dir=True)
 
     codes = []

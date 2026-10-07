@@ -8,7 +8,7 @@
 输出文件 ``<日期>/plate_index.csv``，在
 ``pipe_fetch_platestocks_and_stockdata`` 中作为 fetch_stockquote 的清单
 输入：把四个基准指数与全部板块代码都当作行情标的抓取 K 线
-（落盘于 ``quote/<周期>/stock/``）。
+（落盘于 ``quote/<周期>/index/``）。
 """
 import json
 from datetime import date

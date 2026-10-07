@@ -49,9 +49,12 @@ def fetch_stock_quote(progress, ctx, codes, type, outputdir):
     （富途 K 线订阅有额度消耗，需限速）。全部批次结束后再
     unsubscribe_all 一次。
 
-    已知现状：订阅或取消订阅失败（ret 非 RET_OK）时打印错误并直接
-    return 中止，不做重试；单只 _dump 失败（get_cur_kline 非 RET_OK）
-    仅打印错误继续下一只，不重试——该只股票会缺失对应 parquet。
+    已知现状：整批订阅失败（批内只要有一个无效代码就会整批失败）时
+    降级为逐只订阅——无效代码打印 skip 并跳过，批内其余代码继续抓取；
+    批内全部代码都订阅失败才 return 中止（视为连接/额度级故障）。
+    取消订阅失败（ret 非 RET_OK）打印错误返回；单只 _dump 失败
+    （get_cur_kline 非 RET_OK）仅打印错误继续下一只，不重试——该只
+    标的会缺失对应 parquet。
 
     Args:
         progress: 进度条对象（MultiThreadProgress 或 rich Progress，
@@ -93,8 +96,28 @@ def fetch_stock_quote(progress, ctx, codes, type, outputdir):
                 subscribe_push=False,
                 session=Session.ALL)
         if ret != RET_OK:
-            console.error(f'subscribe failed, {err}')
-            return
+            # 整批订阅失败（批内只要有一个无效代码整批就会失败，如板块
+            # 列表里个别 subscribe 报“未知股票”的板块）：降级为逐只订阅，
+            # 跳过无效代码并继续抓取批内其余代码，避免单个坏代码中止
+            # 整段剩余抓取。
+            console.error(
+                f'subscribe failed, {err}; fallback to per-code subscribe')
+            ok = []
+            for code in part:
+                ret2, err2 = ctx.subscribe(
+                    [code], [sub_types[type]],
+                    subscribe_push=False,
+                    session=Session.ALL)
+                if ret2 == RET_OK:
+                    ok.append(code)
+                else:
+                    console.error(f'skip {code}: {err2}')
+                    progress.update(task, advance=1,
+                                    description=f'skip {code}')
+            if not ok:
+                # 批内所有代码都订阅失败：视为连接/额度级故障，维持原中止行为
+                return
+            part = ok
 
         with keep_one_minute():
             for code in part:

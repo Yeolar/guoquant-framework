@@ -19,7 +19,7 @@ from datetime import date
 from pathlib import Path
 from rich.progress import Progress, track
 import typer
-from guoquant.common.log import console
+from guoquant.common.log import console, info
 from guoquant.common.parallel import parallel
 from guoquant.common.utils import outp, todate
 from guoquant.common.data_path import *
@@ -91,7 +91,9 @@ def command(
         fp.write(f'{e_pct}\n')
         fp.write(item + '\n')
 
-        console.print("""
+        # 多行表格文本用 info(..., pretty=True) 去缩进（rich Console.print
+        # 无 pretty 参数，见 guoquant.common.log.info）
+        info("""
         | E         | M         | 状态      |
         |-----------|-----------|-----------|
         | <0.1      | <=0       | 冰点      |

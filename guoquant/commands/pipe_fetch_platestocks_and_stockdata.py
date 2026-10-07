@@ -6,7 +6,8 @@
 2. fetch_platestocks：逐板块抓取成分股；
 3. rewrite_plateindexes：合并板块为 ``plate_index.csv`` （开头含四个基准指数）；
 4. fetch_stockfiltered：抓取市值分层股票清单（四档 CSV）；
-5. fetch_stockquote：以 ``plate_index.csv`` 为清单先抓日线、再抓周线行情；
+5. fetch_stockquote：以 ``plate_index.csv`` 为清单先抓日线、再抓周线行情
+   （板块/指数 K 线写入 ``quote/<周期>/index/``，与个股的 stock/ 平行）；
 6. fetch_stockdata：以四个市值分组清单各抓取一批行情/资金流/筹码数据。
 
 移植自 guozi-quant pipeline 的同名命令（Django call_command 版），
@@ -41,10 +42,11 @@ def command(
     """执行板块/行情与 K 线数据获取流水线（步骤顺序见模块说明）。
 
     目标日期先经 ``todate()`` 解析、再回退 offset 天；各步骤命令以该
-    日期下的默认路径模板运行。串联关系：``plate_index.csv`` （四个基准
-    指数 + 全部板块）作为 fetch_stockquote 的清单输入抓 d/w 两段行情，
-    四个市值分组 CSV（``filtered_stock_paths`` 定位）作为
-    fetch_stockdata 的清单输入分四批抓取。
+    日期解析出的具体路径（而非各自默认的当天路径）运行。串联关系：
+    ``plate_index.csv`` （四个基准指数 + 全部板块）作为 fetch_stockquote
+    的清单输入抓 d/w 两段行情（板块/指数 K 线写入 ``quote/<周期>/index/``），
+    四个市值分组 CSV（``filtered_stock_paths`` 定位）作为 fetch_stockdata
+    的清单输入分四批抓取。
 
     Args:
         date (str): 目标日期（YYMMDD），默认今天。
@@ -56,17 +58,30 @@ def command(
     dstr = f'{d:%y%m%d}'
     console.print(f'date={dstr}')
 
+    # 各步骤命令的参数默认值是 typer.Option(...) 对象：直接调用命令函数时
+    # 不传参会拿到 OptionInfo（AttributeError: 'OptionInfo' object has no
+    # attribute 'format'），且步骤内部用 date.today() 填路径，与 --date
+    # 指定的 dstr 不一致。因此这里按 dstr 显式构造路径传给各步骤，
+    # 与 pipe_select_stocks 的做法保持一致。
+    plate_dir = f'{dstr}/fetched_data/plate'
+
     console.print('\n[[ FETCH PLATE LIST ]]')
-    fetch_platelist()
+    fetch_platelist(outputdir=plate_dir)
 
     console.print('\n[[ FETCH PLATE STOCKS ]]')
-    fetch_platestocks()
+    fetch_platestocks(
+        file=plate_dir + '/{type}_plate_list.json',
+        output=plate_dir + '/{type}_plates/{code}_{name}.json',
+    )
 
     console.print('\n[[ REWRITE PLATE INDEXES ]]')
-    rewrite_plateindexes()
+    rewrite_plateindexes(
+        file=plate_dir + '/{type}_plate_list.json',
+        output=f'{dstr}/plate_index.csv',
+    )
 
     console.print('\n[[ FETCH FILTERED STOCKS ]]')
-    fetch_stockfiltered()
+    fetch_stockfiltered(output=f'{dstr}/stockfiltered/' + 'stock_{f}.csv')
 
     plates = outp(f'{dstr}/plate_index.csv')
 
@@ -74,12 +89,14 @@ def command(
         outp(f'{dstr}/fetched_data'))
 
     console.print('\n[[ FETCH STOCK QUOTE d ]]')
-    fetch_stockquote(file=plates)
+    fetch_stockquote(k='d', category='index', file=plates,
+                     outputdir=f'{dstr}/fetched_data')
     console.print('\n[[ FETCH STOCK QUOTE w ]]')
-    fetch_stockquote(k='w', file=plates)
+    fetch_stockquote(k='w', category='index', file=plates,
+                     outputdir=f'{dstr}/fetched_data')
 
     for i, stocks in enumerate([stocks_mv_1, stocks_mv_2, stocks_mv_3, stocks_mv_4], 1):
         console.print(f'\n[[ FETCH STOCK DATA {i}/4 ]]')
-        fetch_stockdata(file=stocks)
+        fetch_stockdata(k='d', file=stocks, outputdir=f'{dstr}/fetched_data')
 
     console.print(f'cost={int(time.time() - start)}s', style='green')

@@ -84,31 +84,45 @@ def command(
     dstr = f'{d:%y%m%d}'
     console.print(f'date={dstr}')
 
-    console.print('\n[[ FETCH STOCK DATA ]]')
     root = outp(f'{dstr}/')
     if not root.exists():
+        console.print('\n[[ FETCH STOCK DATA ]]')
         remote_out = os.environ.get(
             'MACMINI_OUT_DIR', '/Users/yeolar/dev/guozi/guozi-command/out')
         fetch_remote(root, f'{remote_out}/{dstr}/')
 
     if not skip_strategy:
+        # 各步骤命令的参数默认值是 typer.Option(...) 对象：直接调用命令函数时
+        # 漏传任何带默认值的参数都会拿到 OptionInfo（AttributeError），且其
+        # 默认路径模板用 date.today() 填充、与 --date 的 dstr 不一致。因此
+        # 所有带默认值的参数都按 dstr 显式传值。
+        fetched = f'{dstr}/fetched_data'
+
         console.print('\n[[ CHECK MARKET SENTIMENT ]]')
-        check_market_sentiment_cycle(date=dstr)
+        check_market_sentiment_cycle(
+            root=fetched,
+            output=f'{dstr}/rank/market_sentiment_cycle.txt',
+            date=dstr)
 
         console.print('\n[[ RANK THEME STRENGTH ]]')
-        rank(strategy='theme_strength', type='industry', date=dstr)
-        rank(strategy='theme_strength', type='concept', date=dstr)
+        rank(strategy='theme_strength', root=fetched, output=None,
+            type='industry', date=dstr)
+        rank(strategy='theme_strength', root=fetched, output=None,
+            type='concept', date=dstr)
 
         for strategy, label in STOCK_STRATEGIES:
             console.print(f'\n[[ {label}(RANK STOCK {strategy.upper()}) ]]')
-            rank(strategy=strategy, type='industry', date=dstr)
-            rank(strategy=strategy, type='concept', date=dstr)
+            rank(strategy=strategy, root=fetched, output=None,
+                type='industry', date=dstr)
+            rank(strategy=strategy, root=fetched, output=None,
+                type='concept', date=dstr)
 
         console.print('\n[[ 涨幅榜策略(RANK STOCK RISE RATE) ]]')
-        rank(strategy='stock_rise_rate_strategy', date=dstr)
+        rank(strategy='stock_rise_rate_strategy', root=fetched, output=None,
+            date=dstr)
 
         console.print('\n[[ TRACE ]]')
-        trace_stock(date=dstr)
+        trace_stock(top=STOCK_TOP_LIMIT, date=dstr)
     else:
         console.print('skip strategies', style='yellow bold')
 
@@ -117,7 +131,7 @@ def command(
         file = outp(f'{dstr}/rank/{filename}')
         if file.exists():
             top = STOCK_TOP_LIMIT if filename != 'stock_rise_rate_strategy_score.csv' else 0
-            report(file=file, top=top, date=dstr)
+            report(file=file, top=top, root=f'{dstr}/render', date=dstr)
 
     console.print('\n[[ COPY DATA ]]')
     copy_data(date=dstr)
